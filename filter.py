@@ -15,22 +15,16 @@ import json
 import os
 
 # -----------------------------
-# 1) Einstellungen / Pfade
+# 1) Shared Configuration
 # -----------------------------
-SCHEDULE_XLSM = "Gesamtspielplan-2025-26_20250918.xlsm"  # <- your local XLSM file
-SCHEDULE_XLSX = "Gesamtspielplan-2025-26_20250918.xlsx"  # <- converted XLSX file
-SCHEDULE_SHEET = "Gesamtspielplan"
-HALLS_URL = "https://hamburg-basket.de/hallen/"
-SCHEDULE_URL = "https://hamburg-basket.de/gesamtspielplan/"
-
-OUT_FILTERED_XLSX = "Spiele_M10C_BSV.xlsx"
-OUT_HALLS_XLSX = "Hallenverzeichnis_HBV_2025_2026.xlsx"
-OUT_MERGED_XLSX = "Spiele_M10C_BSV_mit_Ort.xlsx"
-HALL_OVERRIDES_JSON = "hall_overrides.json"
-
-# Konfiguration
-AUTO_DOWNLOAD_SCHEDULE = True  # Automatisch neueste Datei von Website laden
-# Setzen Sie AUTO_DOWNLOAD_SCHEDULE = False um nur lokale Dateien zu verwenden
+from run import (
+    TARGET_LEAGUE, TARGET_TEAM,
+    SCHEDULE_XLSM, SCHEDULE_XLSX, SCHEDULE_SHEET,
+    HALLS_URL, SCHEDULE_URL, HALL_OVERRIDES_JSON,
+    OUT_FILTERED_XLSX, OUT_HALLS_XLSX, OUT_MERGED_XLSX,
+    AUTO_DOWNLOAD_SCHEDULE,
+    HALL_CODE_PATTERNS, REFERENCE_PATTERNS, ADDRESS_PATTERNS
+)
 
 # -----------------------------
 # 2) Gesamtspielplan von Website herunterladen
@@ -141,8 +135,8 @@ def convert_xlsm_to_xlsx(xlsm_path, xlsx_path):
 # -----------------------------
 def load_and_filter_schedule(path=SCHEDULE_XLSX, sheet=SCHEDULE_SHEET):
     df = pd.read_excel(path, sheet_name=sheet)
-    # Filter: Liga = "M10C" und (HEIM = "BSV" oder GAST = "BSV")
-    mask = (df["LIGA"] == "M10C") & ((df["HEIM"] == "BSV") | (df["GAST"] == "BSV"))
+    # Filter: Liga = TARGET_LEAGUE und (HEIM = TARGET_TEAM oder GAST = TARGET_TEAM)
+    mask = (df["LIGA"] == TARGET_LEAGUE) & ((df["HEIM"] == TARGET_TEAM) | (df["GAST"] == TARGET_TEAM))
     filtered = df.loc[mask, ["DATUM", "ZEIT", "HALLE", "HEIM", "GAST"]].reset_index(drop=True)
     return filtered
 
@@ -153,6 +147,167 @@ def fetch_halls_html(url=HALLS_URL, timeout=30):
     r = requests.get(url, timeout=timeout)
     r.raise_for_status()
     return r.text
+
+# -----------------------------
+# 4.1) Content type detection and validation
+# -----------------------------
+def detect_content_type(soup):
+    """
+    Detect the type of content structure used for hall data.
+    
+    Args:
+        soup (BeautifulSoup): Parsed HTML content
+        
+    Returns:
+        str: Content type ('table', 'list', 'text', 'unknown')
+    """
+    # Check for tables first
+    tables = soup.find_all('table')
+    if tables:
+        # Validate if tables contain hall-like data
+        for table in tables:
+            if contains_hall_data_in_table(table):
+                return 'table'
+    
+    # Check for lists
+    lists = soup.find_all(['ul', 'ol'])
+    if lists:
+        for list_elem in lists:
+            if contains_hall_data_in_list(list_elem):
+                return 'list'
+    
+    # Check for text-based content
+    text_content = soup.get_text()
+    if contains_hall_data_in_text(text_content):
+        return 'text'
+    
+    return 'unknown'
+
+def contains_hall_data_in_table(table):
+    """
+    Check if a table contains hall data by looking for hall codes.
+    
+    Args:
+        table: BeautifulSoup table element
+        
+    Returns:
+        bool: True if table contains hall data
+    """
+    rows = table.find_all('tr')
+    hall_code_count = 0
+    
+    for row in rows[:10]:  # Check first 10 rows
+        cells = row.find_all(['td', 'th'])
+        for cell in cells:
+            text = cell.get_text(strip=True)
+            if matches_hall_code_pattern(text):
+                hall_code_count += 1
+                if hall_code_count >= 2:  # Found at least 2 hall codes
+                    return True
+    
+    return hall_code_count >= 1
+
+def contains_hall_data_in_list(list_elem):
+    """
+    Check if a list contains hall data.
+    
+    Args:
+        list_elem: BeautifulSoup list element
+        
+    Returns:
+        bool: True if list contains hall data
+    """
+    items = list_elem.find_all('li')
+    hall_code_count = 0
+    
+    for item in items[:10]:  # Check first 10 items
+        text = item.get_text(strip=True)
+        if matches_hall_code_pattern(text):
+            hall_code_count += 1
+            if hall_code_count >= 2:
+                return True
+    
+    return hall_code_count >= 1
+
+def contains_hall_data_in_text(text):
+    """
+    Check if text content contains hall data.
+    
+    Args:
+        text (str): Text content
+        
+    Returns:
+        bool: True if text contains hall data
+    """
+    lines = text.split('\n')
+    hall_code_count = 0
+    
+    for line in lines[:50]:  # Check first 50 lines
+        line = line.strip()
+        if matches_hall_code_pattern(line):
+            hall_code_count += 1
+            if hall_code_count >= 3:  # Need more for text-based
+                return True
+    
+    return hall_code_count >= 2
+
+def matches_hall_code_pattern(text):
+    """
+    Check if text matches any of the configured hall code patterns.
+    
+    Args:
+        text (str): Text to check
+        
+    Returns:
+        bool: True if text matches a hall code pattern
+    """
+    if not text or len(text) > 10:  # Hall codes are typically short
+        return False
+    
+    for pattern in HALL_CODE_PATTERNS:
+        if re.match(pattern, text):
+            return True
+    
+    return False
+
+def contains_address_pattern(text):
+    """
+    Check if text contains address patterns using configurable patterns.
+    
+    Args:
+        text (str): Text to check
+        
+    Returns:
+        bool: True if text contains address patterns
+    """
+    for pattern in ADDRESS_PATTERNS:
+        if re.search(pattern, text):
+            return True
+    return False
+
+def extract_address_components(text, hall_dict):
+    """
+    Extract postal code and city from address text.
+    
+    Args:
+        text (str): Address text
+        hall_dict (dict): Hall dictionary to update
+    """
+    # Extract PLZ
+    plz_match = re.search(r'(\d{5})', text)
+    if plz_match:
+        hall_dict["PLZ"] = plz_match.group(1)
+    
+    # Extract city
+    if 'HH' in text:
+        hall_dict["Ort"] = "Hamburg"
+    elif 'Hamburg' in text:
+        hall_dict["Ort"] = "Hamburg"
+    else:
+        # Try to extract city name after postal code
+        city_match = re.search(r'\d{5}\s+([A-Za-zÄÖÜäöüß\s]+)', text)
+        if city_match:
+            hall_dict["Ort"] = city_match.group(1).strip()
 
 # -----------------------------
 # 5) Hallentext aus Seite ziehen
@@ -279,15 +434,8 @@ def handle_reference_halls(halls_df):
     Returns:
         pd.DataFrame: Updated DataFrame with reference halls resolved
     """
-    # Find halls that reference other halls
-    reference_patterns = [
-        r'^Siehe\s+([A-Z0-9]+)$',  # "Siehe KGSE1"
-        r'^Siehe\s+([A-Z0-9]+)\s*$',  # "Siehe KGSE1 " (with trailing space)
-        r'^siehe\s+([A-Z0-9]+)$',  # "siehe KGSE1" (lowercase)
-        r'^siehe\s+([A-Z0-9]+)\s*$',  # "siehe KGSE1 " (lowercase with trailing space)
-        r'^Vgl\.\s+([A-Z0-9]+)$',  # "Vgl. KGSE1" (Vergleich/Compare)
-        r'^Vgl\.\s+([A-Z0-9]+)\s*$',  # "Vgl. KGSE1 " (with trailing space)
-    ]
+    # Find halls that reference other halls (using configurable patterns)
+    reference_patterns = REFERENCE_PATTERNS
     
     reference_halls = []
     base_halls = {}
@@ -434,21 +582,76 @@ def apply_hall_overrides(halls_df, json_file=HALL_OVERRIDES_JSON):
         return halls_df
 
 # -----------------------------
-# 10) Gesamtes Hallenverzeichnis extrahieren (Table-based)
+# 10) Gesamtes Hallenverzeichnis extrahieren (Multi-strategy)
 # -----------------------------
 def scrape_halls_table(url=HALLS_URL):
-    html = fetch_halls_html(url)
-    soup = BeautifulSoup(html, "lxml")
+    """
+    Extract hall data using multiple strategies for maximum resilience.
     
-    # Find the table containing hall data
+    Args:
+        url (str): URL to scrape hall data from
+        
+    Returns:
+        pd.DataFrame: Hall data with columns: Kürzel, Name / Bezeichnung, Adresse, PLZ, Ort, Zusatzinfo
+    """
+    try:
+        html = fetch_halls_html(url)
+        soup = BeautifulSoup(html, "lxml")
+        
+        # Detect content type and choose appropriate parsing strategy
+        content_type = detect_content_type(soup)
+        print(f"Detected content type: {content_type}")
+        
+        if content_type == 'table':
+            return scrape_halls_from_tables(soup)
+        elif content_type == 'list':
+            return scrape_halls_from_lists(soup)
+        elif content_type == 'text':
+            return scrape_halls_from_text(soup)
+        else:
+            print("Warnung: Unbekannter Content-Typ. Versuche Table-Parsing als Fallback.")
+            return scrape_halls_from_tables(soup)
+            
+    except Exception as e:
+        print(f"Fehler beim Scraping der Hallendaten: {e}")
+        return pd.DataFrame(columns=["Kürzel", "Name / Bezeichnung", "Adresse", "PLZ", "Ort", "Zusatzinfo"])
+
+def scrape_halls_from_tables(soup):
+    """
+    Extract hall data from HTML tables with multiple table support.
+    
+    Args:
+        soup (BeautifulSoup): Parsed HTML content
+        
+    Returns:
+        pd.DataFrame: Hall data
+    """
+    # Find all tables containing hall data
     tables = soup.find_all('table')
     if not tables:
         print("Warnung: Keine Tabelle gefunden. Erstelle leere DataFrame.")
         return pd.DataFrame(columns=["Kürzel", "Name / Bezeichnung", "Adresse", "PLZ", "Ort", "Zusatzinfo"])
     
-    table = tables[0]  # Use first table
-    rows = table.find_all('tr')
+    # Try each table until we find one with hall data
+    for i, table in enumerate(tables):
+        if contains_hall_data_in_table(table):
+            print(f"Verwende Tabelle {i+1} von {len(tables)} für Hallendaten")
+            return parse_table_for_halls(table)
+    
+    print("Warnung: Keine Tabelle mit Hallendaten gefunden. Erstelle leere DataFrame.")
+    return pd.DataFrame(columns=["Kürzel", "Name / Bezeichnung", "Adresse", "PLZ", "Ort", "Zusatzinfo"])
 
+def parse_table_for_halls(table):
+    """
+    Parse a single table for hall data.
+    
+    Args:
+        table: BeautifulSoup table element
+        
+    Returns:
+        pd.DataFrame: Hall data
+    """
+    rows = table.find_all('tr')
     entries = []
     current_hall = None
     
@@ -465,26 +668,11 @@ def scrape_halls_table(url=HALLS_URL):
             # This is additional information for the current hall
             if current_hall and cell_texts:
                 info_text = " ".join(cell_texts).strip()
-                # Check if this looks like an address (contains postal code or city)
-                if re.search(r'\b\d{5}\b', info_text) or 'HH' in info_text or 'Hamburg' in info_text:
+                # Check if this looks like an address using configurable patterns
+                if contains_address_pattern(info_text):
                     if not current_hall["Adresse"]:
                         current_hall["Adresse"] = info_text
-                        
-                        # Extract PLZ and Ort
-                        plz_match = re.search(r'(\d{5})', info_text)
-                        if plz_match:
-                            current_hall["PLZ"] = plz_match.group(1)
-                        
-                        # Extract city
-                        if 'HH' in info_text:
-                            current_hall["Ort"] = "Hamburg"
-                        elif 'Hamburg' in info_text:
-                            current_hall["Ort"] = "Hamburg"
-                        else:
-                            # Try to extract city name after postal code
-                            city_match = re.search(r'\d{5}\s+([A-Za-zÄÖÜäöüß\s]+)', info_text)
-                            if city_match:
-                                current_hall["Ort"] = city_match.group(1).strip()
+                        extract_address_components(info_text, current_hall)
                 else:
                     # Additional info (directions, notes, etc.)
                     if current_hall["Zusatzinfo"]:
@@ -493,8 +681,8 @@ def scrape_halls_table(url=HALLS_URL):
                         current_hall["Zusatzinfo"] = info_text
             continue
             
-        # Check if this row contains a hall code (first cell with 2+ uppercase letters including umlauts, optional space, optional number)
-        if cell_texts and re.match(r'^[A-ZÄÖÜ]{2,}\s?[0-9]?$', cell_texts[0]) and len(cell_texts[0]) <= 6:
+        # Check if this row contains a hall code using configurable patterns
+        if cell_texts and matches_hall_code_pattern(cell_texts[0]) and len(cell_texts[0]) <= 6:
             # Save previous hall if exists
             if current_hall:
                 entries.append(current_hall)
@@ -509,26 +697,11 @@ def scrape_halls_table(url=HALLS_URL):
                 "Zusatzinfo": ""
             }
             
-            # Check if second cell contains address (has postal code - more specific check)
-            if len(cell_texts) > 1 and re.search(r'\b\d{5}\b', cell_texts[1]):
+            # Check if second cell contains address using configurable patterns
+            if len(cell_texts) > 1 and contains_address_pattern(cell_texts[1]):
                 # Address is in the same row
                 current_hall["Adresse"] = cell_texts[1]
-                
-                # Extract PLZ and Ort from address
-                plz_match = re.search(r'(\d{5})', cell_texts[1])
-                if plz_match:
-                    current_hall["PLZ"] = plz_match.group(1)
-                
-                # Extract city
-                if 'HH' in cell_texts[1]:
-                    current_hall["Ort"] = "Hamburg"
-                elif 'Hamburg' in cell_texts[1]:
-                    current_hall["Ort"] = "Hamburg"
-                else:
-                    # Try to extract city name after postal code
-                    city_match = re.search(r'\d{5}\s+([A-Za-zÄÖÜäöüß\s]+)', cell_texts[1])
-                    if city_match:
-                        current_hall["Ort"] = city_match.group(1).strip()
+                extract_address_components(cell_texts[1], current_hall)
                 
                 # Additional info from remaining cells
                 if len(cell_texts) > 2:
@@ -545,26 +718,11 @@ def scrape_halls_table(url=HALLS_URL):
             # This is additional information for the current hall
             info_text = " ".join(cell_texts).strip()
             
-            # Check if this looks like an address (contains postal code or city)
-            if re.search(r'\b\d{5}\b', info_text) or 'HH' in info_text or 'Hamburg' in info_text:
+            # Check if this looks like an address using configurable patterns
+            if contains_address_pattern(info_text):
                 if not current_hall["Adresse"]:
                     current_hall["Adresse"] = info_text
-                    
-                    # Extract PLZ and Ort
-                    plz_match = re.search(r'(\d{5})', info_text)
-                    if plz_match:
-                        current_hall["PLZ"] = plz_match.group(1)
-                    
-                    # Extract city
-                    if 'HH' in info_text:
-                        current_hall["Ort"] = "Hamburg"
-                    elif 'Hamburg' in info_text:
-                        current_hall["Ort"] = "Hamburg"
-                    else:
-                        # Try to extract city name after postal code
-                        city_match = re.search(r'\d{5}\s+([A-Za-zÄÖÜäöüß\s]+)', info_text)
-                        if city_match:
-                            current_hall["Ort"] = city_match.group(1).strip()
+                    extract_address_components(info_text, current_hall)
             else:
                 # Additional info (directions, notes, etc.)
                 if current_hall["Zusatzinfo"]:
@@ -593,6 +751,139 @@ def scrape_halls_table(url=HALLS_URL):
     halls_df = handle_reference_halls(halls_df)
     
     # Apply manual overrides from JSON file
+    halls_df = apply_hall_overrides(halls_df)
+    
+    return halls_df
+
+def scrape_halls_from_lists(soup):
+    """
+    Extract hall data from HTML lists (ul/ol elements).
+    
+    Args:
+        soup (BeautifulSoup): Parsed HTML content
+        
+    Returns:
+        pd.DataFrame: Hall data
+    """
+    lists = soup.find_all(['ul', 'ol'])
+    if not lists:
+        print("Warnung: Keine Listen gefunden. Erstelle leere DataFrame.")
+        return pd.DataFrame(columns=["Kürzel", "Name / Bezeichnung", "Adresse", "PLZ", "Ort", "Zusatzinfo"])
+    
+    # Try each list until we find one with hall data
+    for i, list_elem in enumerate(lists):
+        if contains_hall_data_in_list(list_elem):
+            print(f"Verwende Liste {i+1} von {len(lists)} für Hallendaten")
+            return parse_list_for_halls(list_elem)
+    
+    print("Warnung: Keine Liste mit Hallendaten gefunden. Erstelle leere DataFrame.")
+    return pd.DataFrame(columns=["Kürzel", "Name / Bezeichnung", "Adresse", "PLZ", "Ort", "Zusatzinfo"])
+
+def parse_list_for_halls(list_elem):
+    """
+    Parse a list element for hall data.
+    
+    Args:
+        list_elem: BeautifulSoup list element
+        
+    Returns:
+        pd.DataFrame: Hall data
+    """
+    items = list_elem.find_all('li')
+    entries = []
+    
+    for item in items:
+        text = item.get_text(strip=True)
+        if not text:
+            continue
+        
+        # Try to extract hall code from the beginning of the text
+        lines = text.split('\n')
+        if not lines:
+            continue
+        
+        first_line = lines[0].strip()
+        if matches_hall_code_pattern(first_line):
+            hall_entry = {
+                "Kürzel": first_line,
+                "Name / Bezeichnung": "",
+                "Adresse": "",
+                "PLZ": "",
+                "Ort": "",
+                "Zusatzinfo": ""
+            }
+            
+            # Process remaining lines for address and additional info
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                if contains_address_pattern(line):
+                    if not hall_entry["Adresse"]:
+                        hall_entry["Adresse"] = line
+                        extract_address_components(line, hall_entry)
+                else:
+                    if hall_entry["Zusatzinfo"]:
+                        hall_entry["Zusatzinfo"] += " | " + line
+                    else:
+                        hall_entry["Zusatzinfo"] = line
+            
+            entries.append(hall_entry)
+    
+    print(f"Gefunden {len(entries)} Hallen in der Liste")
+    
+    if not entries:
+        return pd.DataFrame(columns=["Kürzel", "Name / Bezeichnung", "Adresse", "PLZ", "Ort", "Zusatzinfo"])
+    
+    # Create DataFrame and process
+    halls_df = pd.DataFrame(entries)
+    halls_df["Kürzel"] = halls_df["Kürzel"].str.strip()
+    halls_df["Adresse"] = halls_df["Adresse"].str.strip(", ").str.replace(" ,", ",", regex=False)
+    halls_df["Ort"] = halls_df["Ort"].str.replace("HH", "Hamburg")
+    
+    # Handle reference halls and apply overrides
+    halls_df = handle_reference_halls(halls_df)
+    halls_df = apply_hall_overrides(halls_df)
+    
+    return halls_df
+
+def scrape_halls_from_text(soup):
+    """
+    Extract hall data from text-based content using the legacy text parsing method.
+    
+    Args:
+        soup (BeautifulSoup): Parsed HTML content
+        
+    Returns:
+        pd.DataFrame: Hall data
+    """
+    print("Verwende Text-basiertes Parsing als Fallback")
+    
+    # Use the existing text-based parsing logic
+    html = str(soup)
+    text = extract_halls_text(html)
+    blocks = split_blocks(text)
+    
+    entries = []
+    for block in blocks:
+        parsed = parse_block(block)
+        if parsed:
+            entries.append(parsed)
+    
+    print(f"Gefunden {len(entries)} Hallen im Text")
+    
+    if not entries:
+        return pd.DataFrame(columns=["Kürzel", "Name / Bezeichnung", "Adresse", "PLZ", "Ort", "Zusatzinfo"])
+    
+    # Create DataFrame and process
+    halls_df = pd.DataFrame(entries)
+    halls_df["Kürzel"] = halls_df["Kürzel"].str.strip()
+    halls_df["Adresse"] = halls_df["Adresse"].str.strip(", ").str.replace(" ,", ",", regex=False)
+    halls_df["Ort"] = halls_df["Ort"].str.replace("HH", "Hamburg")
+    
+    # Handle reference halls and apply overrides
+    halls_df = handle_reference_halls(halls_df)
     halls_df = apply_hall_overrides(halls_df)
     
     return halls_df

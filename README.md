@@ -52,11 +52,27 @@ schedule.
   Automatically handles hall codes that reference other halls\
   (e.g. `KGSE2` → inherits data from `KGSE1`).
 
+- **Multi-Strategy Hall Parsing:**\
+  Automatically detects content type (table, list, text) and uses appropriate parsing strategy\
+  for maximum resilience against HTML structure changes.
+
+- **Configurable Pattern Matching:**\
+  Uses configurable regex patterns for hall codes, references, and addresses\
+  making it easy to adapt to new formats without code changes.
+
+- **Customizable iCal Templates:**\
+  Uses your team communication templates for calendar descriptions\
+  with dynamic values for dates, times, opponents, and venues.
+
+- **Proper Timezone Handling:**\
+  Configurable timezone support with local time or UTC modes\
+  for correct event display across different calendar applications.
+
 - **Output Files:**
 
-  - `Spiele_M10C_BSV.xlsx` -- filtered matches\
+  - `Spiele_{LEAGUE}_{TEAM}.xlsx` -- filtered matches (e.g. `Spiele_M10C_BSV.xlsx`)\
   - `Hallenverzeichnis_HBV_2025_2026.xlsx` -- parsed hall directory\
-  - `Spiele_M10C_BSV_mit_Ort.xlsx` -- merged result (matches + hall
+  - `Spiele_{LEAGUE}_{TEAM}_mit_Ort.xlsx` -- merged result (matches + hall
     addresses)
 
 ---
@@ -72,21 +88,81 @@ pip install pandas requests beautifulsoup4 lxml openpyxl
 
 ---
 
-## 🚀 Usage
+## ⚙️ Configuration
 
-### Automatic Mode (Recommended)
+All scripts use a shared configuration file `run.py`. To change the league and team, edit this file:
 
-1.  Run the script directly:
-
-```bash
-python filter.py
+```python
+# Liga und Team die gefiltert werden sollen
+TARGET_LEAGUE = "M10A"  # Liga die gefiltert werden sollen
+TARGET_TEAM = "BSV"     # Team das gefiltert werden sollen (HEIM oder GAST)
 ```
 
-2.  The script will:
-    - **Automatically download** the latest schedule from the HBV website
-    - Load and filter the Excel schedule
-    - Scrape the official HBV hall directory
-    - Merge both datasets and export the Excel files
+**Available Scripts:**
+- `run.py` - Main execution script (runs both scripts in sequence)
+- `filter.py` - Main filtering and hall data processing
+- `table2ical.py` - Convert filtered schedule to iCal format
+
+---
+
+## 🚀 Usage
+
+### Main Execution (Recommended)
+
+```bash
+python3 run.py
+```
+
+This will run both scripts in sequence:
+1. **Filter and process** the schedule and hall data
+2. **Convert to calendar** format
+
+### Individual Scripts
+
+#### 1. Filter Schedule and Process Hall Data
+
+```bash
+python3 filter.py
+```
+
+The script will:
+- **Automatically download** the latest schedule from the HBV website
+- Load and filter the Excel schedule
+- Scrape the official HBV hall directory
+- Merge both datasets and export the Excel files
+
+#### 2. Convert to Calendar Format
+
+```bash
+python3 table2ical.py
+```
+
+The script will:
+- Read the filtered schedule with hall data
+- Convert all games to iCal format
+- Create a calendar file for import into calendar applications
+
+**📅 Calendar Updates**: See `ICAL_UPDATE_GUIDE.md` for detailed information about how calendar updates work and how to handle changes.
+
+**📝 Template Customization**: See `TEMPLATE_GUIDE.md` for detailed information about customizing iCal templates and team communication styles.
+
+### 3. Customize iCal Templates
+
+Edit the template configuration in `run.py`:
+
+```python
+# Template selection: 'basic' or 'team'
+ICAL_TEMPLATE_TYPE = "team"  # Use "team" for detailed template, "basic" for simple template
+
+# Team-specific information for templates
+TEAM_COACH_NAME = "Super Coach"
+TEAM_PLAYERS = "Player1 Player1"
+TEAM_MEETING_TIME_OFFSET = 45  # Minutes before game start for team meeting
+
+# Timezone configuration for iCal
+ICAL_TIMEZONE = "Europe/Berlin"  # German timezone (CET/CEST)
+ICAL_USE_LOCAL_TIME = True  # Set to False to use UTC
+```
 
 ### Manual Mode
 
@@ -108,11 +184,11 @@ File Description
 
 ---
 
-`Spiele_M10C_BSV.xlsx` Filtered schedule for Liga M10C & team BSV
+`Spiele_{LEAGUE}_{TEAM}.xlsx` Filtered schedule for specified league & team
 
 `Hallenverzeichnis_HBV_2025_2026.xlsx` Parsed hall directory with addresses
 
-`Spiele_M10C_BSV_mit_Ort.xlsx` Final dataset with hall addresses & locations
+`Spiele_{LEAGUE}_{TEAM}_mit_Ort.xlsx` Final dataset with hall addresses & locations
 
 ---
 
@@ -122,13 +198,15 @@ File Description
 
 ### Filter Configuration
 
-You can easily adapt the filters in the script:
+You can easily adapt the filters in the script configuration section:
 
 ```python
-mask = (df["Liga"] == "M10C") & ((df["HEIM"] == "BSV") | (df["GAST"] == "BSV"))
+# Filter-Konfiguration
+TARGET_LEAGUE = "M10C"  # Liga die gefiltert werden soll
+TARGET_TEAM = "BSV"     # Team das gefiltert werden soll (HEIM oder GAST)
 ```
 
-Change `"M10C"` or `"BSV"` to your desired league/team.
+Change `TARGET_LEAGUE` or `TARGET_TEAM` to your desired league/team.
 
 ### Download Configuration
 
@@ -204,18 +282,26 @@ The system includes a JSON-based override system for fine-tuning hall data. Crea
 - Reference halls (e.g. "KGSE2: Siehe KGSE1") are automatically resolved.
 - Parentheses hints (e.g. "(eh. BÖTT)") are treated as additional information.
 - If a hall code is missing on the HBV site, use the JSON override system to add it manually.
+- The system automatically detects HTML structure changes and adapts parsing strategy accordingly.
+- Configurable patterns in `run.py` allow easy adaptation to new hall code or address formats.
+- iCal templates can be customized in `run.py` with team-specific information and communication style.
 
 ## 📁 File Structure
 
 ```
 python_filter/
-├── filter.py                          # Main script
+├── run.py                             # Main execution script with configuration
+├── filter.py                          # Main filtering script
+├── table2ical.py                      # Calendar conversion script
 ├── hall_overrides.json                # Hall data overrides (optional)
+├── ICAL_UPDATE_GUIDE.md               # Detailed calendar update guide
+├── TEMPLATE_GUIDE.md                  # iCal template customization guide
 ├── Gesamtspielplan-2025-26_20251002.xlsm  # Downloaded schedule file
 ├── Gesamtspielplan-2025-26_20251002.xlsx  # Converted schedule file
-├── Spiele_M10C_BSV.xlsx              # Filtered schedule output
+├── Spiele_{LEAGUE}_{TEAM}.xlsx        # Filtered schedule output
 ├── Hallenverzeichnis_HBV_2025_2026.xlsx  # Hall directory output
-└── Spiele_M10C_BSV_mit_Ort.xlsx      # Final merged output
+├── Spiele_{LEAGUE}_{TEAM}_mit_Ort.xlsx    # Final merged output
+└── Spiele_{LEAGUE}_{TEAM}.ics         # Calendar file output
 ```
 
 ## Extended Info
