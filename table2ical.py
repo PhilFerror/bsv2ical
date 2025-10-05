@@ -162,7 +162,7 @@ def read_schedule_excel(file_path=INPUT_XLSX):
         file_path (str): Path to the Excel file
         
     Returns:
-        pd.DataFrame: Schedule data with columns: DATUM, ZEIT, HALLE, HEIM, GAST, ADRESSE, PLZ, ORT
+        pd.DataFrame: Schedule data with columns: DATUM, ZEIT, HALLE, Kürzel, Ort, PLZ, Adresse, HEIM, GAST
     """
     try:
         if not os.path.exists(file_path):
@@ -433,16 +433,16 @@ X-WR-TIMEZONE:{ICAL_TIMEZONE}
                     location_parts.append(hall)
                 
                 # Add address if available
-                if 'ADRESSE' in row and pd.notna(row['ADRESSE']):
-                    location_parts.append(str(row['ADRESSE']))
+                if 'Adresse' in row and pd.notna(row['Adresse']):
+                    location_parts.append(str(row['Adresse']))
                 
                 if 'PLZ' in row and pd.notna(row['PLZ']):
                     plz = str(row['PLZ']).strip()
                     if plz:
                         location_parts.append(plz)
                 
-                if 'ORT' in row and pd.notna(row['ORT']):
-                    ort = str(row['ORT']).strip()
+                if 'Ort' in row and pd.notna(row['Ort']):
+                    ort = str(row['Ort']).strip()
                     if ort:
                         location_parts.append(ort)
                 
