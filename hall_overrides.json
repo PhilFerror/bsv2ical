@@ -1,0 +1,51 @@
+{
+    "description": "Manual hall code and address overrides for fine-tuning",
+    "version": "1.0",
+    "overrides": [
+        {
+            "kürzel": "QUER",
+            "name_bezeichnung": "Vereinshalle",
+            "adresse": "Querkamp 68, 22119 Hamburg",
+            "plz": "22119",
+            "ort": "Hamburg",
+            "zusatzinfo": "Brüder-Grimm-Schule"
+        },
+        {
+            "kürzel": "CFSO",
+            "name_bezeichnung": "Verbandshalle",
+            "adresse": "unbekannt",
+            "plz": "",
+            "ort": "Hamburg",
+            "zusatzinfo": ""
+        },
+        {
+            "kürzel": "VODG",
+            "name_bezeichnung": "Verbandshalle",
+            "adresse": "Volksdorfer Damm 250, 22395 Hamburg",
+            "plz": "22395",
+            "ort": "Hamburg",
+            "zusatzinfo": "Stadtteilschule Bergstedt, Volksdorfer Damm/ Ecke Bergstedter Alte Landstrasse"
+        }
+    ],
+    "instructions": {
+        "usage": "Add hall entries to the 'overrides' array to manually specify hall data",
+        "fields": {
+            "kürzel": "Hall code (required) - must match exactly with hall codes in the schedule",
+            "name_bezeichnung": "Hall name/type (optional) - will replace scraped name",
+            "adresse": "Full address (optional) - will replace scraped address",
+            "plz": "Postal code (optional) - will replace scraped postal code",
+            "ort": "City name (optional) - will replace scraped city",
+            "zusatzinfo": "Additional information like directions, notes (optional) - will replace scraped info"
+        },
+        "behavior": {
+            "update_existing": "If hall code exists in scraped data, fields will be updated",
+            "add_new": "If hall code doesn't exist, a new hall entry will be created",
+            "override_priority": "JSON overrides take precedence over scraped data"
+        },
+        "examples": {
+            "correct_address": "Use to fix incorrect addresses from website",
+            "add_missing_halls": "Add halls that are missing from the website",
+            "update_info": "Update additional information like directions or access notes"
+        }
+    }
+}
